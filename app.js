@@ -1,6 +1,13 @@
 const express = require("express");
 const app = express();
 
+global.user_id = null;
+global.users = [];
+global.tasks = [];
+
+// Limitar el tamaño del cuerpo de las solicitudes a 1kb
+app.use(express.json({ limit: "1kb" }));
+
 app.use((req, res, next) => {
   console.log("Method:", req.method);
   console.log("Path:", req.path);
@@ -9,15 +16,37 @@ app.use((req, res, next) => {
   next();
 });
 
+// Middleware de logging
+const requestLogger = require("./middleware/requestLogger");
+app.use(requestLogger);
+
 // RUTA PRINCIPAL
 app.get("/", (req, res) => {
-  res.send("Hello, World!");
+  res.json({ message: "Hello, World!" });
 });
 
 // RUTA DE PRUEBA POST
 app.post("/testpost", (req, res) => {
-  res.send("POST received.");
+  res.json({ message: "POST received." });
 });
+
+// Route users registration
+/*
+app.post("/api/users", (req, res) => {
+  const newUser = { ...req.body }; // hace una copia
+  global.users.push(newUser);
+  global.user_id = newUser; // después del registro, queda como loggeado
+  delete req.body.password;
+  res.status(201).json(req.body);
+});
+
+const { register } = require("./controllers/userController");
+
+app.post("/api/users", register);
+*/
+
+const userRouter = require("./routes/userRoutes");
+app.use("/api/users", userRouter);
 
 // MIDDLEWARE 404
 const notFound = require("./middleware/not-found");
