@@ -14,9 +14,8 @@ const register = (req, res) => {
   setLoggedOnUser(newUser);
 
   // never return password
-  const responseUser = { name, email };
 
-  return res.status(201).json({ user: responseUser });
+  return res.status(201).json({ user: { name, email } });
 };
 
 // LOGON
@@ -31,8 +30,9 @@ const logon = (req, res) => {
 
   setLoggedOnUser(user);
 
-  const responseUser = { name: user.name, email: user.email };
-  return res.status(200).json({ user: responseUser });
+  return res.status(200).json({
+    user: { name: user.name, email: user.email },
+  });
 };
 
 // LOGOFF
