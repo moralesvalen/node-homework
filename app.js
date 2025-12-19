@@ -20,6 +20,11 @@ app.use((req, res, next) => {
 const requestLogger = require("./middleware/requestLogger");
 app.use(requestLogger);
 
+// Middleware de autenticación
+const authMiddleware = require("./middleware/auth");
+const taskRouter = require("./routes/taskRoutes");
+app.use("/api/tasks", authMiddleware, taskRouter);
+
 // RUTA PRINCIPAL
 app.get("/", (req, res) => {
   res.json({ message: "Hello, World!" });
@@ -31,19 +36,6 @@ app.post("/testpost", (req, res) => {
 });
 
 // Route users registration
-/*
-app.post("/api/users", (req, res) => {
-  const newUser = { ...req.body }; // hace una copia
-  global.users.push(newUser);
-  global.user_id = newUser; // después del registro, queda como loggeado
-  delete req.body.password;
-  res.status(201).json(req.body);
-});
-
-const { register } = require("./controllers/userController");
-
-app.post("/api/users", register);
-*/
 
 const userRouter = require("./routes/userRoutes");
 app.use("/api/users", userRouter);
