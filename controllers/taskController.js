@@ -123,13 +123,8 @@ const update = (req, res) => {
     return res.status(StatusCodes.BAD_REQUEST).json({ error: error.message });
   }
 
-  if (value.title !== undefined) {
-    taskToFind.title = value.title;
-  }
-
-  if (value.isCompleted !== undefined) {
-    taskToFind.isCompleted = value.isCompleted;
-  }
+  // ✅ correct update
+  Object.assign(taskToFind, value);
 
   const { userId, ...sanitizedTask } = taskToFind;
   return res.status(StatusCodes.OK).json(sanitizedTask);
