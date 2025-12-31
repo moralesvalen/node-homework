@@ -1,28 +1,7 @@
-const {
-  storedUsers,
-  addUser,
-  setLoggedOnUser,
-} = require("../util/memoryStore");
-
+const pool = require("../db/pg-pool");
+const hashPassword = require("../util/hashPassword");
+const comparePassword = require("../util/comparePassword");
 const { userSchema } = require("../validation/userSchema");
-const crypto = require("crypto");
-const util = require("util");
-
-const scrypt = util.promisify(crypto.scrypt);
-
-//helper function
-async function hashPassword(password) {
-  const salt = crypto.randomBytes(16).toString("hex");
-  const derivedKey = await scrypt(password, salt, 64);
-  return `${salt}:${derivedKey.toString("hex")}`;
-}
-
-async function comparePassword(inputPassword, storedHash) {
-  const [salt, key] = storedHash.split(":");
-  const keyBuffer = Buffer.from(key, "hex");
-  const derivedKey = await scrypt(inputPassword, salt, 64);
-  return crypto.timingSafeEqual(keyBuffer, derivedKey);
-}
 
 // REGISTER
 const register = async (req, res) => {
@@ -33,82 +12,73 @@ const register = async (req, res) => {
   });
 
   if (error) {
-    return res.status(400).json({ error: error.message });
+    return res.status(400).json({
+      message: "Validation failed",
+      details: error.details,
+    });
   }
 
-  const hashedPassword = await hashPassword(value.password);
+  try {
+    const hashed_password = await hashPassword(value.password);
 
-  const newUser = {
-    name: value.name,
-    email: value.email,
-    hashedPassword,
-  };
+    const result = await pool.query(
+      `INSERT INTO users (email, name, hashed_password)
+       VALUES ($1, $2, $3)
+       RETURNING id, email, name`,
+      [value.email, value.name, hashed_password]
+    );
 
-  addUser(newUser);
-  setLoggedOnUser(newUser);
+    global.user_id = result.rows[0].id;
 
-  return res.status(201).json({
-    user: { name: newUser.name, email: newUser.email },
-  });
+    return res.status(201).json({
+      user: {
+        email: result.rows[0].email,
+        name: result.rows[0].name,
+      },
+    });
+  } catch (e) {
+    if (e.code === "23505") {
+      return res.status(400).json({ message: "Email already registered" });
+    }
+    return res.status(500).json({ message: e.message });
+  }
 };
-/*const register = (req, res) => {
-  const { name, email, password } = req.body;
 
-  const newUser = { name, email, password };
-
-  addUser(newUser);
-  setLoggedOnUser(newUser);
-
-  // never return password
-
-  return res.status(201).json({ user: { name, email } });
-};*/
-
-// LOGON
-const logon = async (req, res) => {
+// LOGIN  ✅ (EL TEST USA ESTE NOMBRE)
+const login = async (req, res) => {
   if (!req.body) req.body = {};
 
   const { email, password } = req.body;
 
-  const user = storedUsers.find((u) => u.email === email);
+  const result = await pool.query("SELECT * FROM users WHERE email = $1", [
+    email,
+  ]);
 
-  if (!user) {
+  if (result.rows.length === 0) {
     return res.status(401).json({ message: "Authentication Failed" });
   }
 
-  const isValid = await comparePassword(password, user.hashedPassword);
+  const user = result.rows[0];
+  const isValid = await comparePassword(password, user.hashed_password);
 
   if (!isValid) {
     return res.status(401).json({ message: "Authentication Failed" });
   }
 
-  setLoggedOnUser(user);
+  global.user_id = user.id;
 
   return res.status(200).json({
-    user: { name: user.name, email: user.email },
+    user: {
+      name: user.name,
+      email: user.email,
+    },
   });
 };
-/*
-const logon = (req, res) => {
-  const { email, password } = req.body;
-
-  const user = storedUsers.find((u) => u.email === email);
-
-  if (!user || user.password !== password) {
-    return res.status(401).json({ message: "Authentication Failed" });
-  }
-
-  setLoggedOnUser(user);
-
-  return res.status(200).json({
-    user: { name: user.name, email: user.email },
-  });
-};*/
 
 // LOGOFF
 const logoff = (req, res) => {
-  setLoggedOnUser(null);
+  global.user_id = null;
   return res.status(200).json({ message: "logged off" });
 };
 
-module.exports = { register, logon, logoff };
+module.exports = { register, login, logoff };

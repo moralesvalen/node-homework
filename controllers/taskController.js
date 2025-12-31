@@ -1,70 +1,53 @@
 const { StatusCodes } = require("http-status-codes");
 const { taskSchema, patchTaskSchema } = require("../validation/taskSchema");
-const { getLoggedOnUser } = require("../util/memoryStore");
+const pool = require("../db/pg-pool");
 
-if (!global.tasks) {
-  global.tasks = [];
-}
+// INDEX (GET /tasks)
+const index = async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, title, is_completed FROM tasks WHERE user_id = $1",
+      [global.user_id]
+    );
 
-const taskCounter = (() => {
-  let lastTaskNumber = 0;
-  return () => {
-    lastTaskNumber += 1;
-    return lastTaskNumber;
-  };
-})();
+    if (result.rows.length === 0) {
+      return res.status(StatusCodes.NOT_FOUND).json({
+        message: "No tasks found",
+      });
+    }
 
-// all my tasks
-const index = (req, res) => {
-  const loggedUser = getLoggedOnUser();
-
-  const userTasks = global.tasks.filter(
-    (task) => task.userId === loggedUser.email
-  );
-
-  if (userTasks.length === 0) {
-    return res
-      .status(StatusCodes.NOT_FOUND)
-      .json({ message: "No tasks found" });
+    return res.status(StatusCodes.OK).json(result.rows);
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
   }
-
-  const sanitizedTasks = userTasks.map((task) => {
-    const { userId, ...sanitizedTask } = task;
-    return sanitizedTask;
-  });
-
-  return res.status(StatusCodes.OK).json(sanitizedTasks);
 };
 
-// show a specific task
-const show = (req, res) => {
-  const loggedUser = getLoggedOnUser();
-  const taskId = parseInt(req.params?.id);
+// SHOW (GET /tasks/:id)
+const show = async (req, res) => {
+  const taskId = parseInt(req.params.id);
 
   if (!taskId) {
-    return res
-      .status(StatusCodes.BAD_REQUEST)
-      .json({ message: "The task ID passed is not valid." });
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      message: "The task ID passed is not valid.",
+    });
   }
 
-  const taskToFind = global.tasks.find(
-    (task) => task.id === taskId && task.userId === loggedUser.email
+  const result = await pool.query(
+    "SELECT id, title, is_completed FROM tasks WHERE id = $1 AND user_id = $2",
+    [taskId, global.user_id]
   );
 
-  if (!taskToFind) {
-    return res
-      .status(StatusCodes.NOT_FOUND)
-      .json({ message: "That task was not found" });
+  if (result.rows.length === 0) {
+    return res.status(StatusCodes.NOT_FOUND).json({
+      message: "That task was not found",
+    });
   }
 
-  const { userId, ...sanitizedTask } = taskToFind;
-  return res.status(StatusCodes.OK).json(sanitizedTask);
+  return res.status(StatusCodes.OK).json(result.rows[0]);
 };
 
-// create a new task
-const create = (req, res) => {
-  const loggedUser = getLoggedOnUser();
-
+// CREATE (POST /tasks)
+const create = async (req, res) => {
   if (!req.body) req.body = {};
 
   const { error, value } = taskSchema.validate(req.body, {
@@ -72,93 +55,90 @@ const create = (req, res) => {
   });
 
   if (error) {
-    return res.status(StatusCodes.BAD_REQUEST).json({ error: error.message });
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      message: "Validation failed",
+      details: error.details,
+    });
   }
 
-  const newTask = {
-    id: taskCounter(),
-    title: value.title,
-    isCompleted: value.isCompleted,
-    userId: loggedUser.email,
-  };
+  const result = await pool.query(
+    `INSERT INTO tasks (title, is_completed, user_id)
+     VALUES ($1, $2, $3)
+     RETURNING id, title, is_completed`,
+    [value.title, value.isCompleted, global.user_id]
+  );
 
-  global.tasks.push(newTask);
-
-  const { userId, ...sanitizedTask } = newTask;
-  return res.status(StatusCodes.CREATED).json(sanitizedTask);
+  return res.status(StatusCodes.CREATED).json(result.rows[0]);
 };
 
-// update a specific task
-const update = (req, res) => {
-  const loggedUser = getLoggedOnUser();
-  const taskId = parseInt(req.params?.id);
-
+// UPDATE (PATCH /tasks/:id)
+const update = async (req, res) => {
+  const taskId = parseInt(req.params.id);
   if (!taskId) {
-    return res
-      .status(StatusCodes.BAD_REQUEST)
-      .json({ message: "The task ID passed is not valid." });
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      message: "The task ID passed is not valid.",
+    });
   }
-
-  const taskToFind = global.tasks.find((task) => task.id === taskId);
-
-  if (!taskToFind) {
-    return res
-      .status(StatusCodes.NOT_FOUND)
-      .json({ message: "That task was not found" });
-  }
-
-  if (taskToFind.userId !== loggedUser.email) {
-    return res
-      .status(StatusCodes.FORBIDDEN)
-      .json({ message: "Not authorized" });
-  }
-
-  if (!req.body) req.body = {};
 
   const { error, value } = patchTaskSchema.validate(req.body, {
     abortEarly: false,
   });
 
   if (error) {
-    return res.status(StatusCodes.BAD_REQUEST).json({ error: error.message });
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      message: "Validation failed",
+      details: error.details,
+    });
   }
 
-  // ✅ correct update
-  Object.assign(taskToFind, value);
+  const keys = Object.keys(value);
+  if (keys.length === 0) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      message: "No fields to update",
+    });
+  }
 
-  const { userId, ...sanitizedTask } = taskToFind;
-  return res.status(StatusCodes.OK).json(sanitizedTask);
+  const setClause = keys
+    .map(
+      (key, idx) =>
+        `${key === "isCompleted" ? "is_completed" : key} = $${idx + 1}`
+    )
+    .join(", ");
+
+  const params = [...Object.values(value), taskId, global.user_id];
+
+  const result = await pool.query(
+    `UPDATE tasks SET ${setClause}
+     WHERE id = $${keys.length + 1} AND user_id = $${keys.length + 2}
+     RETURNING id, title, is_completed`,
+    params
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(StatusCodes.NOT_FOUND).json({
+      message: "That task was not found",
+    });
+  }
+
+  return res.status(StatusCodes.OK).json(result.rows[0]);
 };
 
-// delete a specific task
-const deleteTask = (req, res) => {
-  const loggedUser = getLoggedOnUser();
-  const taskToFind = parseInt(req.params?.id);
+// DELETE (DELETE /tasks/:id)
+const deleteTask = async (req, res) => {
+  const taskId = parseInt(req.params.id);
 
-  if (!taskToFind) {
-    return res
-      .status(StatusCodes.BAD_REQUEST)
-      .json({ message: "The task ID passed is not valid." });
+  const result = await pool.query(
+    "DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING id",
+    [taskId, global.user_id]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(StatusCodes.NOT_FOUND).json({
+      message: "That task was not found",
+    });
   }
 
-  const taskIndex = global.tasks.findIndex((task) => task.id === taskToFind);
-
-  if (taskIndex === -1) {
-    return res
-      .status(StatusCodes.NOT_FOUND)
-      .json({ message: "That task was not found" });
-  }
-
-  if (global.tasks[taskIndex].userId !== loggedUser.email) {
-    return res
-      .status(StatusCodes.FORBIDDEN)
-      .json({ message: "Not authorized" });
-  }
-
-  const { userId, ...sanitizedTask } = global.tasks[taskIndex];
-  global.tasks.splice(taskIndex, 1);
-
-  return res.status(StatusCodes.OK).json(sanitizedTask);
+  return res.status(StatusCodes.OK).json(result.rows[0]);
 };
 
 module.exports = { index, show, create, update, deleteTask };
