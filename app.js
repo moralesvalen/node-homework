@@ -1,6 +1,6 @@
-//const pool = require("./db/pg-pool");
 const prisma = require("./db/prisma");
 const express = require("express");
+const analyticsRoutes = require("./routes/analyticsRoutes");
 const app = express();
 
 global.user_id = null;
@@ -26,6 +26,9 @@ app.use(requestLogger);
 const authMiddleware = require("./middleware/auth");
 const taskRouter = require("./routes/taskRoutes");
 app.use("/api/tasks", authMiddleware, taskRouter);
+app.use("/api/analytics", authMiddleware, analyticsRoutes);
+
+
 
 // RUTA PRINCIPAL
 app.get("/", (req, res) => {
@@ -90,9 +93,6 @@ async function shutdown(code = 0) {
   try {
     await new Promise((resolve) => server.close(resolve));
     console.log("HTTP server closed.");
-/*
-    await pool.end();
-    console.log("Database pool closed.");*/
 
     await prisma.$disconnect();
     console.log("Prisma disconnected.");

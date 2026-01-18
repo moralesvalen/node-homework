@@ -17,6 +17,7 @@
   "license": "MIT",
   "dependencies": {
     "@prisma/client": "^6.19.1",
+    "bcryptjs": "^3.0.3",
     "csv-parser": "^3.2.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
