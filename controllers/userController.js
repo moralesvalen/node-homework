@@ -1,53 +1,92 @@
-//const pool = require("../db/pg-pool");
 const prisma = require("../db/prisma");
 const { setLoggedOnUser } = require("../util/memoryStore");
 
-const hashPassword = require("../util/hashPassword");
 const comparePassword = require("../util/comparePassword");
 const { userSchema } = require("../validation/userSchema");
+const { StatusCodes } = require("http-status-codes");
+const bcrypt = require("bcryptjs");
 
 // REGISTER
+
 const register = async (req, res, next) => {
-  if (!req.body) req.body = {};
-
-  const { error, value } = userSchema.validate(req.body, {
-    abortEarly: false,
-  });
-
-  if (error) {
-    return res.status(400).json({
-      message: "Validation failed",
-      details: error.details,
-    });
-  }
-
   try {
-    const hashedPassword = await hashPassword(value.password);
+    const { error, value } = userSchema.validate(req.body);
 
-    const user = await prisma.user.create({
-      data: {
-        email: value.email.toLowerCase(),
-        name: value.name,
-        hashedPassword,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-      },
+    if (error) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        message: error.details[0].message,
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(value.password, 10);
+    delete value.password;
+
+    const result = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          email: value.email,
+          name: value.name,
+          hashedPassword,
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          createdAt: true,
+        },
+      });
+
+      const welcomeTaskData = [
+        {
+          title: "Complete your profile",
+          priority: "medium",
+          userId: newUser.id,
+        },
+        { title: "Add your first task", priority: "high", userId: newUser.id },
+        {
+          title: "Explore the app features",
+          priority: "low",
+          userId: newUser.id,
+        },
+      ];
+
+      await tx.task.createMany({
+        data: welcomeTaskData,
+      });
+
+      const welcomeTasks = await tx.task.findMany({
+        where: {
+          userId: newUser.id,
+          title: {
+            in: welcomeTaskData.map((t) => t.title),
+          },
+        },
+        select: {
+          id: true,
+          title: true,
+          isCompleted: true,
+          priority: true,
+          userId: true,
+        },
+      });
+
+      return { user: newUser, welcomeTasks };
     });
 
-    global.user_id = user.id;
+    global.user_id = result.user.id;
 
-    return res.status(201).json({
-      email: user.email,
-      name: user.name,
+    return res.status(StatusCodes.CREATED).json({
+      message: "User registered successfully with welcome tasks",
+      user: result.user,
+      tasksCreated: result.welcomeTasks.length,
     });
   } catch (err) {
     if (err.code === "P2002") {
-      return res.status(400).json({ message: "Email already registered" });
+      return res.status(StatusCodes.CONFLICT).json({
+        message: "Email already registered",
+      });
     }
-    return res.status(500).json({ message: err.message });
+    return next(err);
   }
 };
 
@@ -68,7 +107,7 @@ const logon = async (req, res, next) => {
       return res.status(401).json({ message: "Authentication Failed" });
     }
 
-    const isValid = await comparePassword(password, user.hashedPassword);
+    const isValid = await bcrypt.compare(password, user.hashedPassword);
 
     if (!isValid) {
       return res.status(401).json({ message: "Authentication Failed" });
@@ -78,8 +117,11 @@ const logon = async (req, res, next) => {
     global.user_id = user.id;
 
     return res.status(200).json({
-      name: user.name,
-      email: user.email,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      },
     });
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -92,4 +134,47 @@ const logoff = (req, res) => {
   return res.status(200).json({ message: "logged off" });
 };
 
-module.exports = { register, logon, login: logon, logoff };
+
+
+// GET USER BY ID
+const getUser = async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+
+  if (isNaN(id)) {
+    return res.status(400).json({
+      error: "Invalid user ID",
+    });
+  }
+
+  let select;
+
+  if (req.query.fields) {
+    const fields = req.query.fields.split(",");
+    select = {};
+
+    for (const field of fields) {
+      select[field] = true;
+    }
+  } else {
+    select = {
+      id: true,
+      name: true,
+      email: true,
+      createdAt: true,
+    };
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id },
+    select: select,
+  });
+
+  if (!user) {
+    return res.status(404).json({
+      error: "User not found",
+    });
+  }
+
+  return res.status(200).json(user);
+};
+module.exports = { register, logon, login: logon, logoff, getUser };
