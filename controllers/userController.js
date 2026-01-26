@@ -1,92 +1,68 @@
 const prisma = require("../db/prisma");
-const { setLoggedOnUser } = require("../util/memoryStore");
-
-const comparePassword = require("../util/comparePassword");
 const { userSchema } = require("../validation/userSchema");
 const { StatusCodes } = require("http-status-codes");
 const bcrypt = require("bcryptjs");
+const { randomUUID } = require("crypto");
+const jwt = require("jsonwebtoken");
+
+//helpers JWT
+
+const cookieFlags = (req) => {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "Strict",
+  };
+};
+
+const setJwtCookie = (req, res, user) => {
+  const payload = { id: user.id, csrfToken: randomUUID() };
+
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
+
+  res.cookie("jwt", token, {
+    ...cookieFlags(req),
+    maxAge: 60 * 60 * 1000, // 1 hora
+  });
+
+  return payload.csrfToken;
+};
 
 // REGISTER
 
-const register = async (req, res, next) => {
+const register = async (req, res) => {
+  const { error, value } = userSchema.validate(req.body);
+
+  if (error) {
+    return res.status(400).json({ message: error.details[0].message });
+  }
+
   try {
-    const { error, value } = userSchema.validate(req.body);
-
-    if (error) {
-      return res.status(StatusCodes.BAD_REQUEST).json({
-        message: error.details[0].message,
-      });
-    }
-
     const hashedPassword = await bcrypt.hash(value.password, 10);
-    delete value.password;
 
-    const result = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          email: value.email,
-          name: value.name,
-          hashedPassword,
-        },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          createdAt: true,
-        },
-      });
-
-      const welcomeTaskData = [
-        {
-          title: "Complete your profile",
-          priority: "medium",
-          userId: newUser.id,
-        },
-        { title: "Add your first task", priority: "high", userId: newUser.id },
-        {
-          title: "Explore the app features",
-          priority: "low",
-          userId: newUser.id,
-        },
-      ];
-
-      await tx.task.createMany({
-        data: welcomeTaskData,
-      });
-
-      const welcomeTasks = await tx.task.findMany({
-        where: {
-          userId: newUser.id,
-          title: {
-            in: welcomeTaskData.map((t) => t.title),
-          },
-        },
-        select: {
-          id: true,
-          title: true,
-          isCompleted: true,
-          priority: true,
-          userId: true,
-        },
-      });
-
-      return { user: newUser, welcomeTasks };
+    const user = await prisma.user.create({
+      data: {
+        name: value.name,
+        email: value.email.toLowerCase(),
+        hashedPassword,
+      },
     });
 
-    global.user_id = result.user.id;
+    const csrfToken = setJwtCookie(req, res, user);
 
-    return res.status(StatusCodes.CREATED).json({
-      message: "User registered successfully with welcome tasks",
-      user: result.user,
-      tasksCreated: result.welcomeTasks.length,
+    return res.status(201).json({
+      name: user.name,
+      email: user.email,
+      csrfToken,
     });
   } catch (err) {
     if (err.code === "P2002") {
-      return res.status(StatusCodes.CONFLICT).json({
-        message: "Email already registered",
-      });
+      // 🔴 TEST ESPERA 400, NO 409
+      return res.status(400).json({ message: "Email already registered" });
     }
-    return next(err);
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -113,15 +89,12 @@ const logon = async (req, res, next) => {
       return res.status(401).json({ message: "Authentication Failed" });
     }
 
-    setLoggedOnUser(user.id);
-    global.user_id = user.id;
+    const csrfToken = setJwtCookie(req, res, user);
 
-    return res.status(200).json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-      },
+    return res.status(StatusCodes.OK).json({
+      name: user.name,
+      email: user.email,
+      csrfToken,
     });
   } catch (err) {
     return res.status(500).json({ message: err.message });
@@ -130,12 +103,9 @@ const logon = async (req, res, next) => {
 
 // LOGOFF
 const logoff = (req, res) => {
-  global.user_id = null;
+  res.clearCookie("jwt", cookieFlags(req));
   return res.status(200).json({ message: "logged off" });
 };
-
-
-
 // GET USER BY ID
 const getUser = async (req, res) => {
   const id = parseInt(req.params.id, 10);
