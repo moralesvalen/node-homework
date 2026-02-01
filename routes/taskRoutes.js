@@ -1,7 +1,5 @@
 const express = require("express");
 const router = express.Router();
-//const authenticate = require("../middleware/auth");
-const jwtMiddleware = require("../middleware/jwtMiddleware");
 
 const {
   index,
@@ -12,7 +10,7 @@ const {
   bulkCreate,
 } = require("../controllers/taskController");
 
-router.use(jwtMiddleware); // Apply authentication middleware to all task routes
+
 
 router.post("/", create);
 
