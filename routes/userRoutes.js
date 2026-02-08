@@ -5,6 +5,7 @@ const { register, logon, logoff } = require("../controllers/userController");
 const jwtMiddleware = require("../middleware/jwtMiddleware");
 
 router.route("/").post(register);
+router.post("/register", register); // Ruta alternativa para el registro para front end CTD
 router.route("/logon").post(logon);
 router.post("/logoff", jwtMiddleware, logoff);
 module.exports = router;

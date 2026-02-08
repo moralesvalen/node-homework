@@ -42,6 +42,9 @@ const send401 = (res) => {
 };
 
 module.exports = async (req, res, next) => {
+  console.log("JWT MIDDLEWARE HIT");
+  console.log("Cookies:", req.cookies);
+
   const token = req?.cookies?.jwt;
   if (!token) {
     return send401(res);
