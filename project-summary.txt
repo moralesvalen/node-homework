@@ -1,1 +1,88 @@
+Project Summary – Assignment 11 (Final Project)
+
+Live Deployment
+---------------
+Render URL:
 https://node-homework-moralesvalen.onrender.com
+
+Overview
+--------
+This project extends the original Node Homework backend by adding Role-Based Access Control (RBAC) and protected analytics endpoints. All enhancements were implemented strictly on the backend, as required, and no changes were made to the React frontend.
+
+All features were tested using Postman.
+
+Enhancements Added
+------------------
+
+1. Role-Based Access Control (RBAC)
+A role column was added to the User model to support role-based permissions.
+
+Supported roles:
+- user (default role)
+- manager
+
+The user role is stored in the database, included in the JWT payload at login, and added to req.user by the authentication middleware.
+
+New users are always created with the role "user" by default.
+
+2. Protected Analytics Endpoints
+Analytics routes were restricted so that only users with the "manager" role can access them.
+
+Behavior:
+- HTTP 200 for authenticated users with role = "manager"
+- HTTP 403 for authenticated users without the required role
+- HTTP 401 for unauthenticated requests
+
+Creating a Manager User for Testing
+----------------------------------
+Users are always registered with role = "user" through the public API.
+
+For security reasons, roles cannot be assigned via the API to prevent privilege escalation.
+
+To test manager-only features:
+1. Register a user via POST /api/users
+2. Update the user's role to "manager" directly in the database (Prisma Studio or SQL)
+3. Log out and log back in so the updated role is included in the JWT
+
+Modified / New API Endpoints
+----------------------------
+
+POST /api/users
+Registers a new user (default role = "user").
+
+Body:
+{
+  "name": "Test User",
+  "email": "user.test@icloud.com",
+  "password": "Test2517*"
+}
+
+A JWT cookie is automatically set upon successful registration.
+
+POST /api/users/logon
+Authenticates a user and sets a JWT cookie containing:
+- user id
+- role
+- csrfToken
+
+GET /api/analytics/users
+(Manager only)
+
+Returns a list of all users with task statistics.
+
+Security
+--------
+- JWT is stored in an HTTP-only cookie
+- CSRF protection is enforced for all non-GET requests
+- Role-based authorization is enforced via middleware
+- Users can only access their own tasks
+
+Testing
+-------
+All functionality was tested using Postman, including authentication, role restrictions, analytics access, and task creation.
+
+The provided React frontend was not modified or used to test the enhanced features.
+
+Conclusion
+----------
+These enhancements demonstrate secure backend development, including authentication, authorization, role-based access control, and protected APIs using Node.js, Express, Prisma, and PostgreSQL.

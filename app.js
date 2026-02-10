@@ -77,12 +77,12 @@ app.get("/health", async (req, res) => {
 const userRouter = require("./routes/userRoutes");
 app.use("/api/users", userRouter);
 
-app.use("/tasks", jwtMiddleware, taskRouter);
+//app.use("/tasks", jwtMiddleware, taskRouter);
 //app.use("/user", userRouter);
-
+/*
 app.post("/register", (req, res) => {
   return res.sendStatus(204);
-});
+});*/
 // MIDDLEWARE 404
 const notFound = require("./middleware/not-found");
 app.use(notFound);

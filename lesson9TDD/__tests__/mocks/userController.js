@@ -6,7 +6,7 @@ const jwt = require("jsonwebtoken");
 
 const setJwtCookie = (req, res, user) => {
   // Sign JWT
-  const payload = { id: user.id, csrfToken: randomUUID() };
+  const payload = { id: user.id, role: user.role, csrfToken: randomUUID() };
   req.user = payload; // this is a convenient way to return the csrf token to the caller.
   const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" }); // 1 hour expiration
 
@@ -112,7 +112,8 @@ const register = async (req, res, next) => {
 };
 
 const logoff = async (req, res) => {
-  res.sendStatus(StatusCodes.OK);
+  res.clearCookie("jwt");
+  return res.sendStatus(StatusCodes.OK);
 };
 
 module.exports = { logon, register, logoff };
