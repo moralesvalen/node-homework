@@ -16,7 +16,11 @@ const cookieFlags = (req) => {
 };
 
 const setJwtCookie = (req, res, user) => {
-  const payload = { id: user.id, csrfToken: randomUUID() };
+  const payload = {
+    id: user.id,
+    role: user.role, // rol agregado al payload
+    csrfToken: randomUUID(),
+  };
 
   const token = jwt.sign(payload, process.env.JWT_SECRET, {
     expiresIn: "1h",
@@ -47,6 +51,7 @@ const register = async (req, res) => {
         name: value.name,
         email: value.email.toLowerCase(),
         hashedPassword,
+        role: value.role ?? "user",
       },
     });
 
@@ -59,7 +64,7 @@ const register = async (req, res) => {
     });
   } catch (err) {
     if (err.code === "P2002") {
-      // 🔴 TEST ESPERA 400, NO 409
+      // TEST ESPERA 400, NO 409
       return res.status(400).json({ message: "Email already registered" });
     }
     return res.status(500).json({ message: err.message });
@@ -94,6 +99,7 @@ const logon = async (req, res, next) => {
     return res.status(StatusCodes.OK).json({
       name: user.name,
       email: user.email,
+      role: user.role, // rol agregado a la respuesta
       csrfToken,
     });
   } catch (err) {

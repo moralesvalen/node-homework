@@ -6,12 +6,12 @@ const userSchema = Joi.object({
   password: Joi.string()
     .trim()
     .min(8)
-    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).+$/)
+    .pattern(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[a-zA-Z0-9]).+$/)
     .required()
     .messages({
       "string.pattern.base":
-        "Password must be at least 8 characters long and include upper and lower case letters, a number, and a special character.",
+        "Password must be at least 8 characters long and include upper and lower case letters, a number, and a special character",
     }),
-});
+}).unknown(true); //CAMBIO CLAVE
 
 module.exports = { userSchema };

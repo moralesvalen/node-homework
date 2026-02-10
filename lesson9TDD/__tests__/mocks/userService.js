@@ -1,4 +1,4 @@
-const prisma = require("../../db/prisma");
+const prisma = require("../../../db/prisma");
 const crypto = require("crypto");
 const util = require("util");
 
@@ -28,13 +28,15 @@ async function createUser(data) {
 }
 
 async function verifyUserPassword(email, inputPassword) {
-  const user = await prisma.user.findFirst({ where: { email: { equals: email, mode: "insensitive" }}});
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
+  });
+
   if (!user) return { user: null, isValid: false };
 
   return {
     user,
-    // isValid: await comparePassword(inputPassword, user.hashedPassword),
-    isValid: true,
+    isValid: await comparePassword(inputPassword, user.hashedPassword),
   };
 }
 
